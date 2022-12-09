@@ -38,7 +38,7 @@ class MinimalSubscriber(Node):
             qos_profile=qos_policy)
         self.subscription_imu  # prevent unused variable warning
         
-        self.rate = 10.0 # Hz
+        self.rate = 5.0 # Hz
         self.dt = 1.0/self.rate
         
         self.timer = self.create_timer(self.dt, self.run_kalman_filter)
@@ -58,6 +58,9 @@ class MinimalSubscriber(Node):
         # robot wheel radius
         self.r = 0.066/2.0
 
+        # robot wheel base distance
+        self.F = 0.08*2.0
+        
         # Sensor measurement variance
         self.measurement_var = 4.3
 
@@ -66,6 +69,7 @@ class MinimalSubscriber(Node):
         
         # [left wheel velocity, right wheel velocity]
         self.joint_values = msg.velocity
+        #print("vel", self.joint_values[0], self.joint_values[1])
 
     def imu_callback(self, msg):
         self.omega = msg.angular_velocity.z
@@ -75,70 +79,49 @@ class MinimalSubscriber(Node):
         self.accel_var = msg.linear_acceleration_covariance[0]
         self.omega_var = msg.angular_velocity_covariance[0]
 
+        #print(self.omega, self.acceleration, self.accel_var, self.omega_var)
+
     def run_kalman_filter(self):
-        
         if self.accel_var is None and self.omega_var is None:
             return
             
         self.A = np.matrix([
-            [1.0, self.dt, 0.0], 
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0]
+            [1.0, self.dt, 0.0, 0.0], 
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0]
         ])
         
         self.B = np.matrix([
             [0.5*(self.dt)**2, 0.0], 
             [self.dt, 0.0],
-            [0.0, self.dt]
+            [0.0, self.dt],
+            [0.0, 1.0]
         ])
 
         self.Q = np.matrix([
-            [(1.0/4.0*(self.dt)**4) * self.accel_var, (1.0/2.0*(self.dt)**3) * self.accel_var, 0.0],
-            [(1.0/2.0*(self.dt)**3) * self.accel_var, ((self.dt)**2) * self.accel_var, 0.0],
-            [0.0, 0.0, self.omega_var]
+            [(1.0/4.0*(self.dt)**4) * self.accel_var, (1.0/2.0*(self.dt)**3) * self.accel_var, 0.0, 0.0],
+            [(1.0/2.0*(self.dt)**3) * self.accel_var, ((self.dt)**2) * self.accel_var, 0.0, 0.0],
+            [0.0, 0.0, ((self.dt)**2) * self.omega_var, self.dt * self.omega_var],
+            [0.0, 0.0, self.dt * self.omega_var, self.omega_var],
         ])
         
         self.C = np.matrix([
-            [0.0, 1.0/self.r, 0.0],
-            [0.0, 1.0/self.r, 0.0],
-            [0.0, 0.0, 0.0],
+            [0.0, 1.0/self.r, 0.0, self.F/2.0],
+            [0.0, 1.0/self.r, 0.0, -self.F/2.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
         ])
 
-         
+        
         self.R = np.identity(3) * self.measurement_var
         
 
-
-        # T = np.arange(0, Tfinal, self.dt)
-        # xhat_S = np.zeros([3, len(T) + 1])
-        # x_S = np.zeros([3, len(T) + 1])
-        # x = np.zeros([3, len(T) + 1])
-        # x[:, [0]] = self.xhat
-        # y = np.zeros([2, len(T)])
-        # y_hat = np.zeros([2, len(T)])
-
-
-
         u = np.matrix([self.acceleration, self.omega]).transpose()
-
-        y = np.matrix([self.joint_values[0], self.joint_values[1], 0.0]).transpose() 
-        # print(y.shape)
         
-        #for k in range(len(T)):
-            # u = 0.01 # normally you'd initialise this above
 
-            # #### Simulate motion with random motion disturbance ####
-            # w = np.matrix([self.Q[0, 0] * randn(1), self.Q[1, 1] * randn(1), self.Q[2, 2] * randn(1)])
-
-            # # update state - this is a simulated motion and is PURELY for fake
-            # # sensing and would essentially be
-            # x[:, [k + 1]] = self.A * x[:, [k]] + self.B * u + w
-
-            # # taking a measurement - simulating a sensor
-            # # create our sensor disturbance
-            # v = np.matrix([self.R[0, 0] * randn(1), self.R[1, 1] * randn(1)])
-            # # create this simulated sensor measurement
-            # y[:, [k]] = self.C*x[:, [k+1]] + v
+        self.omega_soft = self.joint_values[0] * self.joint_values[1]
+        y = np.matrix([self.joint_values[0], self.joint_values[1], self.omega_soft]).transpose() 
 
         #########################################
         ###### Kalman Filter Estimation #########
@@ -146,39 +129,15 @@ class MinimalSubscriber(Node):
         # Prediction update
         xhat_k = self.A * self.xhat + self.B * u # we do not put noise on our prediction
         P_predict = self.A*self.P*self.A.transpose() + self.Q
-        # this co-variance is the prediction of essentially how the measurement and sensor model move together
-        # in relation to each state and helps scale our kalman gain by giving
-        # the ratio. By Definition, P is the variance of the state space, and
-        # by applying it to the motion model we're getting a motion uncertainty
-        # which can be propogated and applied to the measurement model and
-        # expand its uncertainty as well
-
-        # Measurement Update and Kalman Gain
-        # K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose() + self.R)
-
-        # print(P_predict)
-        K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose() + self.R)
-
         
-        # K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose())
-
-
-        # the pseudo inverse of the measurement model, as it relates to the model covariance
-        # if we don't have a measurement for velocity, the P-matrix tells the
-        # measurement model how the two should move together (and is normalised
-        # in the process with added noise), which is how the kalman gain is
-        # created --> detailing "how" the error should be scaled based on the
-        # covariance. If you expand P_predict out, it's clearly the
-        # relationship and cross-projected relationships, of the states from a
-        # measurement and motion model perspective, with a moving scalar to
-        # help drive that relationship towards zero (P should stabilise).
+        K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose() + self.R)
 
         self.xhat = xhat_k + K * (y - self.C * xhat_k)
         self.P = (1 - K * self.C) * P_predict # the full derivation for this is kind of complex relying on
                                             # some pretty cool probability knowledge
 
         print(xhat_k)
-
+        
         self.publish_path(xhat_k)
         # Store estimate
         
@@ -190,8 +149,8 @@ class MinimalSubscriber(Node):
         # return x, xhat_S, x_S, y_hat
 
     def publish_path(self, xhat):
-        #print(self.path_list)
         self.path_list.append(self.return_cart_pose(xhat))
+        
 
         path_msg = Path()
         path_msg.header.frame_id = 'odom'
