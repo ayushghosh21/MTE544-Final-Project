@@ -232,15 +232,6 @@ class MinimalSubscriber(Node):
 
         self.get_logger().info(f"MSE of estimation: {mse}")
 
-        # Store estimate ####################################################################DELETE LATER OR KEEP#
-        
-        # xhat_S[:, [k]] = xhat_k
-        # x_S[:, [k]] = self.xhat
-        # y_hat[:, [k]] = self.C*self.xhat
-
-
-        # return x, xhat_S, x_S, y_hat
-
     def publish_path(self, delta_x, theta):
 
         self.path_list.append(self.return_cart_pose(delta_x, theta))
@@ -251,7 +242,6 @@ class MinimalSubscriber(Node):
         for pose in  self.path_list:
             point = PoseStamped()
 
-            #print(pose)
             point.pose.position.x = pose[0]
             point.pose.position.y = pose[1]
 
