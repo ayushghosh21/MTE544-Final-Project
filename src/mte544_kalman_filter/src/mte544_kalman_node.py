@@ -19,7 +19,7 @@ class MinimalSubscriber(Node):
         super().__init__('mte544_kalman_node')
 
         # Define kalman filter rate and corresponding delta_T 
-        self.rate = 20 # Hz
+        self.rate = 25 # Hz
         self.dt = 1.0/self.rate
 
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
