@@ -25,3 +25,6 @@ Open a new terminal in the root of this workspace, and run the `path` bag file:
 ```ros2 bag play src/mte544_kalman_filter/bag_files/path```
 
 Wait a few moments for the bag file to start sending data. The robot TF, the odometry path (dotted red line) and the kalman filter estimated path will also show (green solid line). The MSE value will also be printed from the launch terminal. 
+
+## Trial Videos:
+Each trial/expriment conducted with this kalman filter has been recorded and can be found here: `Trial_Videos`. Inside this folder, the videos have been group according to what setting was changed in the trials.
