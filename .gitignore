@@ -1,0 +1,6 @@
+build
+install
+log
+
+src/*
+!src/mte544_kalman_filter
