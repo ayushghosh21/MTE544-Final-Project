@@ -10,8 +10,9 @@ from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from sensor_msgs.msg import Imu
-from nav_msgs.msg import Odometry
 from nav_msgs.msg import Path
+from tf2_msgs.msg import TFMessage
+from visualization_msgs.msg import Marker, MarkerArray
 
 class MinimalSubscriber(Node):
 
@@ -43,19 +44,21 @@ class MinimalSubscriber(Node):
         self.subscription_imu  # prevent unused variable warning
         
         # Define /odom topic subscriber. Used for collecting ground truth
-        self.subscription_odom = self.create_subscription(
-            Odometry,
-            'odom',
-            self.odom_callback,
+        self.subscription_tf = self.create_subscription(
+            TFMessage,
+            'tf',
+            self.tf_callback,
             qos_profile=qos_policy)
-        self.subscription_odom  # prevent unused variable warning
+        self.subscription_tf  # prevent unused variable warning
         
         # Define path publisher. Used to visualize estimated path in rviz
         self.path_pub = self.create_publisher(Path, '/path_viz', 10)
         
+        # Define ground truth path publisher. Used to visualize ground truth path in rviz
+        self.viz_pub = self.create_publisher(MarkerArray, 'ground_truth_viz', 10)
 
         # Store current Ground truth global poses as [x, y]
-        self.curr_ground_truth_pose = []
+        self.curr_ground_truth_pose = [0.0, 0.0]
 
         # Store ground truth list
         self.ground_truth_list = []
@@ -129,10 +132,13 @@ class MinimalSubscriber(Node):
         # Signal that still receiving messages
         self.heartbeat = True
     
-    def odom_callback(self, msg):
-        """Storing the global pose from the /odom topic"""
-        self.curr_ground_truth_pose = [msg.pose.pose.position.x, msg.pose.pose.position.y]
-
+    def tf_callback(self, msg):
+        """Storing the global pose from the /tf topic"""
+        all_tfs = msg.transforms
+        
+        for tf in all_tfs:
+            if tf.child_frame_id == "base_footprint":
+                self.curr_ground_truth_pose = [tf.transform.translation.x, tf.transform.translation.y]
 
     def run_kalman_filter(self):
         
@@ -144,9 +150,9 @@ class MinimalSubscriber(Node):
         else:
             return
 
-        # Stall timer function if no values from imu or joint_states have been 
+        # Stall timer function if no values from imu or joint_states or tf have been 
         # received by the topic callback functions
-        if self.accel_var is None and self.omega_var is None and self.joint_values is None:
+        if self.accel_var is None and self.omega_var is None and self.joint_values is None and self.curr_ground_truth_pose is None:
             return
 
         if self.first_time:
@@ -182,12 +188,11 @@ class MinimalSubscriber(Node):
             self.C = np.matrix([
                 [0.0, 1.0/self.r, 0.0, -self.F/2.0],
                 [0.0, 1.0/self.r, 0.0, self.F/2.0],
-                [0.0, 0.0, 0.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ])
 
             # Measurement Uncertainty
-            self.R = np.identity(4) * self.measurement_var
+            self.R = np.identity(3) * self.measurement_var
 
             self.first_time = False
 
@@ -205,7 +210,7 @@ class MinimalSubscriber(Node):
         self.omega_soft = self.r * (right_wheel_encoder_speed - left_wheel_encoder_speed)/self.F
         
         # Defining the measurement vector
-        y = np.matrix([left_wheel_encoder_speed, right_wheel_encoder_speed, 0.0, self.omega_soft]).transpose() 
+        y = np.matrix([left_wheel_encoder_speed, right_wheel_encoder_speed, self.omega_soft]).transpose() 
 
         # Prediction
         xhat_k = self.A * self.xhat + self.B * u
@@ -227,6 +232,7 @@ class MinimalSubscriber(Node):
         self.previous_dist_value = xhat_k.flat[0]
 
         self.ground_truth_list.append(self.curr_ground_truth_pose)        
+        self.visualize_ground_truth(self.ground_truth_list)
 
         mse = self.calculate_MSE()
 
@@ -248,7 +254,8 @@ class MinimalSubscriber(Node):
             path_msg.poses.append(point)
 
         self.path_pub.publish(path_msg)
-    
+
+
     def return_cart_pose(self, delta_dist, theta):
         prev_pose = self.path_list[-1]
         
@@ -271,7 +278,41 @@ class MinimalSubscriber(Node):
         mse = sum_square_error/n
         
         return mse
-            
+    
+    def visualize_ground_truth(self, points):
+        
+        markers = MarkerArray()
+        
+        for idx, val in enumerate(points):
+            ## To produce dotted line effect, only include every 15th point
+            if idx%15 == 0:
+                if val is None:
+                    return
+                ellipse = Marker()
+                ellipse.header.frame_id = 'odom'
+                ellipse.header.stamp = self.get_clock().now().to_msg()
+                ellipse.pose.position.x = val[0] 
+                ellipse.pose.position.y = val[1]
+                ellipse.pose.position.z = 0.0
+                ellipse.pose.orientation.y = 0.707
+                ellipse.pose.orientation.w = 0.707
+                
+                ellipse._id = idx
+
+                ellipse.type = Marker.CYLINDER
+                ellipse.scale.x = 0.02
+                ellipse.scale.y = 0.02
+                ellipse.scale.z = 0.02
+                ellipse.pose.position.z = 0.0
+                
+                ellipse.color.a = 1.0
+                ellipse.color.r = 1.0
+                ellipse.color.g = 0.0
+                ellipse.color.b = 0.0
+                
+                markers.markers.append(ellipse)
+
+        self.viz_pub.publish(markers)
 
 def main(args=None):
     rclpy.init(args=args)
