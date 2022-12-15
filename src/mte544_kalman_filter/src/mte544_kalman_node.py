@@ -271,7 +271,7 @@ class MinimalSubscriber(Node):
         sum_square_error = 0
         n = len(self.ground_truth_list)
         for gt_pose, est_pose in zip(self.ground_truth_list, self.path_list):
-            # Finding euler distance between ground truth and estimated point
+            # Finding eucledian distance between ground truth and estimated point
             square_error = math.sqrt((gt_pose[0] - est_pose[0])**2 + (gt_pose[1] - est_pose[1])**2)
             sum_square_error += square_error
         
