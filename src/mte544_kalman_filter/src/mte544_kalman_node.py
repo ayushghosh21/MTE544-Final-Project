@@ -344,6 +344,7 @@ class MTE544KalmanFilter(Node):
         ln3 = plt.plot(self.time_store, theta)
         plt.legend(["x", "v", "theta"])
         plt.title(f"Estimated States with: \nRate={self.rate}Hz, measurement_var={self.measurement_var}(rad/s)^2, path={path}")
+        plt.xlabel("Time [s]")
         plt.show()
 
 def main(args=None):
