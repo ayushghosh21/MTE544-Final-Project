@@ -100,9 +100,6 @@ class MTE544KalmanFilter(Node):
         
         # Sensor measurement variance
         self.measurement_var = 1e-5
-        
-        # For storing the kalman gain
-        self.K_store = []
 
         # For storing time
         self.time_store = []
@@ -230,10 +227,9 @@ class MTE544KalmanFilter(Node):
         # Update
         K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose() + self.R)
 
-        # Storing Kalman gain and time stamp
+        # Storing time stamp
         elapsed_duration = self.get_clock().now() - self.start_time
         elapsed_time = elapsed_duration.nanoseconds/1.0E9
-        self.K_store.append(K)
         self.time_store.append(elapsed_time)
 
         self.xhat = xhat_k + K * (y - self.C * xhat_k)
@@ -333,20 +329,6 @@ class MTE544KalmanFilter(Node):
                 markers.markers.append(ellipse)
 
         self.viz_pub.publish(markers)
-    def plot_gain(self):
-        K_x = []
-        K_v = []
-        K_theta = []
-        for matrix in self.K_store:
-            K_x.append(matrix[0, 0])
-            K_v.append(matrix[1, 1])
-            K_theta.append(matrix[2, 2])
-        
-        ln1 = plt.plot(self.time_store, K_x)
-        ln2 = plt.plot(self.time_store, K_v)
-        ln3 = plt.plot(self.time_store, K_theta)
-        plt.legend(["K_x", "K_v", "K_theta"])
-        
 
     def plot_states(self, path):
         x = []
@@ -356,12 +338,12 @@ class MTE544KalmanFilter(Node):
             x.append(state[0])
             v.append(state[1])
             theta.append(state[2])
-        plt.figure("2")
+        
         ln1 = plt.plot(self.time_store, x)
         ln2 = plt.plot(self.time_store, v)
         ln3 = plt.plot(self.time_store, theta)
         plt.legend(["x", "v", "theta"])
-        plt.title(f"Estimated States for Rate={self.rate}, measurement_var={self.measurement_var}, path={path}")
+        plt.title(f"Estimated States with: \nRate={self.rate}Hz, measurement_var={self.measurement_var}(rad/s)^2, path={path}")
         plt.show()
 
 def main(args=None):
@@ -375,7 +357,6 @@ def main(args=None):
         # Destroy the node explicitly
         # (optional - otherwise it will be done automatically
         # when the garbage collector destroys the node object)
-        filter_node.plot_gain()
         filter_node.plot_states(path=1)
         filter_node.destroy_node()
         rclpy.shutdown()
