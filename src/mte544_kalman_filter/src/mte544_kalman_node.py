@@ -14,7 +14,7 @@ from nav_msgs.msg import Path
 from tf2_msgs.msg import TFMessage
 from visualization_msgs.msg import Marker, MarkerArray
 
-class MinimalSubscriber(Node):
+class MTE544KalmanFilter(Node):
 
     def __init__(self):
         super().__init__('mte544_kalman_node')
@@ -99,9 +99,18 @@ class MinimalSubscriber(Node):
         self.F = 0.16
         
         # Sensor measurement variance
-        self.measurement_var = 0.1
+        self.measurement_var = 1e-5
         
-        
+        # For storing the kalman gain
+        self.K_store = []
+
+        # For storing time
+        self.time_store = []
+        self.start_time = None
+
+        # For storing the states [x, x_dot, theta]
+        self.States_store = []
+
         # First time flag. This is used to define the Kalman matricies one time, 
         # after the variance values are read from the imu_topic
         self.first_time = True
@@ -194,6 +203,7 @@ class MinimalSubscriber(Node):
             # Measurement Uncertainty
             self.R = np.identity(3) * self.measurement_var
 
+            self.start_time = self.get_clock().now()
             self.first_time = False
 
         #########################################
@@ -220,6 +230,12 @@ class MinimalSubscriber(Node):
         # Update
         K = P_predict * self.C.transpose()*np.linalg.inv(self.C*P_predict*self.C.transpose() + self.R)
 
+        # Storing Kalman gain and time stamp
+        elapsed_duration = self.get_clock().now() - self.start_time
+        elapsed_time = elapsed_duration.nanoseconds/1.0E9
+        self.K_store.append(K)
+        self.time_store.append(elapsed_time)
+
         self.xhat = xhat_k + K * (y - self.C * xhat_k)
         
         # Using full derivation when updating P to avoid matrix singularities
@@ -228,6 +244,10 @@ class MinimalSubscriber(Node):
         # Define the delta distance and theta value to pass into the publish function
         delta_dist = xhat_k.flat[0] - self.previous_dist_value
         theta = xhat_k.flat[2]
+
+        # Store States
+        self.States_store.append([xhat_k.flat[0], xhat_k.flat[1], xhat_k.flat[2]])
+
         self.publish_path(delta_dist, theta)
         self.previous_dist_value = xhat_k.flat[0]
 
@@ -313,19 +333,51 @@ class MinimalSubscriber(Node):
                 markers.markers.append(ellipse)
 
         self.viz_pub.publish(markers)
+    def plot_gain(self):
+        K_x = []
+        K_v = []
+        K_theta = []
+        for matrix in self.K_store:
+            K_x.append(matrix[0, 0])
+            K_v.append(matrix[1, 1])
+            K_theta.append(matrix[2, 2])
+        
+        ln1 = plt.plot(self.time_store, K_x)
+        ln2 = plt.plot(self.time_store, K_v)
+        ln3 = plt.plot(self.time_store, K_theta)
+        plt.legend(["K_x", "K_v", "K_theta"])
+        
+
+    def plot_states(self, path):
+        x = []
+        v = []
+        theta = []
+        for state in self.States_store:
+            x.append(state[0])
+            v.append(state[1])
+            theta.append(state[2])
+        plt.figure("2")
+        ln1 = plt.plot(self.time_store, x)
+        ln2 = plt.plot(self.time_store, v)
+        ln3 = plt.plot(self.time_store, theta)
+        plt.legend(["x", "v", "theta"])
+        plt.title(f"Estimated States for Rate={self.rate}, measurement_var={self.measurement_var}, path={path}")
+        plt.show()
 
 def main(args=None):
     rclpy.init(args=args)
 
-    minimal_subscriber = MinimalSubscriber()
+    filter_node = MTE544KalmanFilter()
 
     try:
-        rclpy.spin(minimal_subscriber)
+        rclpy.spin(filter_node)
     except KeyboardInterrupt:
         # Destroy the node explicitly
         # (optional - otherwise it will be done automatically
         # when the garbage collector destroys the node object)
-        minimal_subscriber.destroy_node()
+        filter_node.plot_gain()
+        filter_node.plot_states(path=1)
+        filter_node.destroy_node()
         rclpy.shutdown()
 
 
