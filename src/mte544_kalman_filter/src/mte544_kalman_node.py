@@ -186,8 +186,8 @@ class MinimalSubscriber(Node):
             
             # Observation matrix
             self.C = np.matrix([
-                [0.0, 1.0/self.r, 0.0, -self.F/2.0],
-                [0.0, 1.0/self.r, 0.0, self.F/2.0],
+                [0.0, 1.0/self.r, 0.0, -self.F/(self.r*2.0)],
+                [0.0, 1.0/self.r, 0.0, self.F/(self.r*2.0)],
                 [0.0, 0.0, 0.0, 1.0],
             ])
 
