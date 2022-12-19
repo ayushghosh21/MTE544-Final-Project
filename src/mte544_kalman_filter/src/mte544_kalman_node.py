@@ -331,6 +331,7 @@ class MTE544KalmanFilter(Node):
         self.viz_pub.publish(markers)
 
     def plot_states(self, path):
+        """Creates and displays a plot of the estimated states once the user stops the node."""
         x = []
         v = []
         theta = []
@@ -355,10 +356,10 @@ def main(args=None):
     try:
         rclpy.spin(filter_node)
     except KeyboardInterrupt:
-        # Destroy the node explicitly
-        # (optional - otherwise it will be done automatically
-        # when the garbage collector destroys the node object)
+        # When user stops the node using Ctl^C, automatically display the estimated states plot. 
         filter_node.plot_states(path=1)
+        
+        # Once user closes the plot window, terminate the node fully.
         filter_node.destroy_node()
         rclpy.shutdown()
 
